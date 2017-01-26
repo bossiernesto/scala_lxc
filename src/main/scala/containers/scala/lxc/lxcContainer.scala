@@ -2,8 +2,11 @@ package containers.scala.lxc
 
 import scala.language.implicitConversions
 import scala.sys.process._
+import scala.util.{ Try, Success, Failure }
 
 package object lxc {
+
+  class UnexistantContainerException(message: String) extends Exception(message)
 
   trait ContainerStatus
   case class WorkingContainer(val container: lxcContainer) extends ContainerStatus
@@ -31,8 +34,11 @@ package object lxc {
 
     def executeOn[T](onExisting: Boolean = true)(block: => T): ContainerStatus = {
       if (exists(containerName) == onExisting) {
-        val result: T = block
-        return WorkingContainer(new lxcContainer(containerName, Some(result)))
+        return Try(block) match {
+          case Success(result) => WorkingContainer(new lxcContainer(containerName, Some(result)))
+          case Failure(e)      => BrokenContainer(this, e.getMessage)
+        }
+
       }
       //Check if the container actually exists
       if (onExisting == false)
@@ -66,13 +72,17 @@ package object lxc {
           optionsCmd ++ Seq("--") ++ templateOptions
         else
           optionsCmd
-
-        if (finalCmd.! == 0) {
+        val cmdResult = finalCmd.!
+        
+        if (cmdResult == 0) {
           if (!exists(containerName)) //verify
-            return UnexistantContainer(this, "Container " + containerName + " doesn't seem to be created!")
+            throw new UnexistantContainerException("Container " + containerName + " doesn't seem to be created!")
           else
-            return UnusableContainer(this, "Creation error of container " + containerName)
+            throw new UnexistantContainerException("Creation error of container " + containerName)
+
         }
+
+        cmdResult
       }
     }
 
